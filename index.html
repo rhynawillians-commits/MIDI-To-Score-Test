@@ -1,0 +1,426 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NeuralScore Pipeline</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- React & ReactDOM -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  
+  <!-- Babel for parsing JSX in the browser -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    /* Custom animations */
+    @keyframes slideUpFade {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-slide-up {
+      animation: slideUpFade 0.5s ease-out forwards;
+    }
+    
+    /* Scrollbar styling for the terminal */
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-300 font-sans selection:bg-indigo-500 selection:text-white">
+  
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    // --- SVG Icon Components ---
+    const IconProps = { xmlns: "http://www.w3.org/2000/svg", width: "24", height: "24", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" };
+    
+    const Upload = ({ className }) => <svg {...IconProps} className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>;
+    const FileAudio = ({ className }) => <svg {...IconProps} className={className}><path d="M17.5 22h.5c.5 0 1-.2 1.4-.6.4-.4.6-.9.6-1.4V7.5L14.5 2H6c-.5 0-1 .2-1.4.6C4.2 3 4 3.5 4 4v3"/><polyline points="14 2 14 8 20 8"/><path d="M10 20v-1a2 2 0 1 1 4 0v1a2 2 0 1 1-4 0Z"/><path d="M6 20v-1a2 2 0 1 0-4 0v1a2 2 0 1 0 4 0Z"/><path d="M2 19v-3a6 6 0 0 1 12 0v3"/></svg>;
+    const Cpu = ({ className }) => <svg {...IconProps} className={className}><rect x="4" y="4" width="16" height="16" rx="2" ry="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>;
+    const GitBranch = ({ className }) => <svg {...IconProps} className={className}><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>;
+    const Music = ({ className }) => <svg {...IconProps} className={className}><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>;
+    const Layout = ({ className }) => <svg {...IconProps} className={className}><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>;
+    const CheckCircle = ({ className }) => <svg {...IconProps} className={className}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>;
+    const Loader = ({ className }) => <svg {...IconProps} className={className}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>;
+    const Download = ({ className }) => <svg {...IconProps} className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>;
+    const Terminal = ({ className }) => <svg {...IconProps} className={className}><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>;
+    const Server = ({ className }) => <svg {...IconProps} className={className}><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>;
+    const FileCode = ({ className }) => <svg {...IconProps} className={className}><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><polyline points="10 13 8 15 10 17"/><polyline points="14 13 16 15 14 17"/></svg>;
+    const Play = ({ className }) => <svg {...IconProps} className={className}><polygon points="5 3 19 12 5 21 5 3"/></svg>;
+    const FastForward = ({ className }) => <svg {...IconProps} className={className}><polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/></svg>;
+    const Info = ({ className }) => <svg {...IconProps} className={className}><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>;
+
+    // --- Main Application ---
+    const PIPELINE_STEPS = [
+      { id: 'quantization', title: 'Neural Quantization', desc: 'Seq2Seq/RNN rubato interpretation', icon: FastForward },
+      { id: 'harmony', title: 'Harmonic Context Modeling', desc: 'HMMs for intelligent enharmonics', icon: GitBranch },
+      { id: 'polyphony', title: 'Contrapuntal Voice Separation', desc: 'Clustering for multi-voice clefs', icon: Layout },
+      { id: 'smoothing', title: 'Articulation Smoothing', desc: 'Microscopic rest cleanup', icon: Music }
+    ];
+
+    function App() {
+      const [file, setFile] = useState(null);
+      const [status, setStatus] = useState('idle'); // idle, processing, complete
+      const [currentStepIndex, setCurrentStepIndex] = useState(-1);
+      const [logs, setLogs] = useState([]);
+      const logsEndRef = useRef(null);
+
+      // Auto-scroll terminal logs
+      useEffect(() => {
+        logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, [logs]);
+
+      const addLog = (msg) => {
+        setLogs((prev) => [...prev, { time: new Date().toLocaleTimeString(), msg }]);
+      };
+
+      const simulateProcessing = async (uploadedFile) => {
+        setStatus('processing');
+        setLogs([]);
+        addLog('System: Initializing backend AI models...');
+        await new Promise(r => setTimeout(r, 1000));
+        
+        if (uploadedFile && !uploadedFile.name.toLowerCase().match(/\.(mid|midi)$/)) {
+          addLog(`System WARNING: File [${uploadedFile.name}] does not have a standard .mid extension. Attempting to parse raw bytes anyway...`);
+        } else {
+          addLog(`System: Received raw unquantized MIDI [${uploadedFile?.name || 'performance.mid'}]`);
+        }
+        
+        addLog('System: Loading music21 and PyTorch frameworks...');
+        await new Promise(r => setTimeout(r, 1500));
+
+        // Step 1
+        setCurrentStepIndex(0);
+        addLog('ML_Engine: Initiating Sequence-to-Sequence (Seq2Seq) model...');
+        addLog('ML_Engine: Analyzing tempo fluctuations and extracting intentional rubato.');
+        await new Promise(r => setTimeout(r, 2000));
+        addLog('ML_Engine: Rhythms successfully mapped to readable tuplets and subdivisions.');
+
+        // Step 2
+        setCurrentStepIndex(1);
+        addLog('HMM_Module: Constructing Hidden Markov Model for harmonic progression...');
+        addLog('HMM_Module: Key center detected: C# Minor resolving to F# Minor.');
+        await new Promise(r => setTimeout(r, 2000));
+        addLog('HMM_Module: Corrected 47 enharmonic misspellings (e.g. Ab -> G#).');
+
+        // Step 3
+        setCurrentStepIndex(2);
+        addLog('Cluster_Alg: Running DBSCAN for contrapuntal voice separation...');
+        addLog('Cluster_Alg: Splitting polyphony into 3 distinct voices across Grand Staff.');
+        await new Promise(r => setTimeout(r, 2500));
+        addLog('Cluster_Alg: Verified hand-span playability for human pianist.');
+
+        // Step 4
+        setCurrentStepIndex(3);
+        addLog('Heuristics: Cleaning micro-rests and translating to staccato markings...');
+        await new Promise(r => setTimeout(r, 1500));
+        addLog('Export: Compiling symbolic data...');
+        addLog('Export: Engaging LilyPond backend for PDF engraving...');
+        await new Promise(r => setTimeout(r, 1000));
+        addLog('Export: Successfully generated professional PDF score.');
+
+        setCurrentStepIndex(4);
+        setStatus('complete');
+      };
+
+      const handleFileUpload = (e) => {
+        const uploadedFile = e.target.files[0];
+        if (uploadedFile) {
+          setFile(uploadedFile);
+          simulateProcessing(uploadedFile);
+        }
+      };
+
+      const handleDragOver = (e) => {
+        e.preventDefault();
+      };
+
+      const handleDrop = (e) => {
+        e.preventDefault();
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+          const droppedFile = e.dataTransfer.files[0];
+          setFile(droppedFile);
+          simulateProcessing(droppedFile);
+        }
+      };
+
+      const resetPipeline = () => {
+        setFile(null);
+        setStatus('idle');
+        setCurrentStepIndex(-1);
+        setLogs([]);
+      };
+
+      return (
+        <div className="min-h-screen flex flex-col">
+          
+          {/* Navbar */}
+          <nav className="bg-slate-900 border-b border-slate-800 px-6 py-4 flex items-center justify-between sticky top-0 z-10 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="bg-indigo-500 p-2 rounded-lg">
+                <Cpu className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-slate-100">NeuralScore Pipeline</h1>
+                <p className="text-xs text-indigo-400 font-medium tracking-wide uppercase">AI-Augmented Music Informatics</p>
+              </div>
+            </div>
+            <div className="hidden md:flex items-center gap-6 text-sm font-medium">
+              <a href="#pipeline" className="hover:text-indigo-400 transition-colors">Workspace</a>
+              <a href="#architecture" className="hover:text-indigo-400 transition-colors">Architecture</a>
+              <div className="flex items-center gap-2 text-emerald-400 bg-emerald-400/10 px-3 py-1.5 rounded-full border border-emerald-400/20">
+                <Server className="w-4 h-4" />
+                <span>GPU Active</span>
+              </div>
+            </div>
+          </nav>
+
+          <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-8 space-y-8">
+            
+            {/* Workspace Grid */}
+            <section id="pipeline" className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+              
+              {/* Left Column: Upload & Pipeline Steps */}
+              <div className="lg:col-span-5 space-y-6">
+                
+                {/* Upload Zone */}
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+                  <h2 className="text-lg font-semibold text-slate-100 mb-4 flex items-center gap-2">
+                    <FileAudio className="w-5 h-5 text-indigo-400" />
+                    Input Raw MIDI
+                  </h2>
+                  
+                  {status === 'idle' ? (
+                    <label 
+                      onDragOver={handleDragOver}
+                      onDrop={handleDrop}
+                      className="flex flex-col items-center justify-center w-full h-48 border-2 border-slate-700 border-dashed rounded-xl cursor-pointer bg-slate-800/50 hover:bg-slate-800 transition-colors group"
+                    >
+                      <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                        <Upload className="w-10 h-10 text-slate-400 mb-3 group-hover:text-indigo-400 transition-colors" />
+                        <p className="mb-2 text-sm text-slate-300"><span className="font-semibold text-indigo-400">Click to upload</span> or drag and drop</p>
+                        <p className="text-xs text-slate-500">Unquantized .MID or .MIDI files</p>
+                      </div>
+                      <input type="file" className="hidden" accept=".mid,.midi,audio/midi,audio/x-midi,audio/*" onChange={handleFileUpload} />
+                    </label>
+                  ) : (
+                    <div className="flex items-center justify-between p-4 bg-slate-800/50 border border-slate-700 rounded-xl">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-indigo-500/20 rounded-lg">
+                          <Music className="w-6 h-6 text-indigo-400" />
+                        </div>
+                        <div className="overflow-hidden">
+                          <p className="text-sm font-medium text-slate-200 truncate max-w-[150px] sm:max-w-[200px]">{file?.name || 'performance.mid'}</p>
+                          <p className="text-xs text-slate-500">{(file?.size / 1024).toFixed(2) || '124.5'} KB • Unquantized Data</p>
+                        </div>
+                      </div>
+                      {status === 'complete' && (
+                        <button onClick={resetPipeline} className="text-xs text-slate-400 hover:text-white underline shrink-0">
+                          Process Another
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Pipeline Visualizer */}
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+                  <h2 className="text-lg font-semibold text-slate-100 mb-6 flex items-center gap-2">
+                    <Play className="w-5 h-5 text-indigo-400" />
+                    Transcription Pipeline
+                  </h2>
+                  
+                  <div className="space-y-6 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-700 before:to-transparent">
+                    {PIPELINE_STEPS.map((step, index) => {
+                      const isPast = currentStepIndex > index;
+                      const isCurrent = currentStepIndex === index;
+                      const StepIcon = step.icon;
+
+                      return (
+                        <div key={step.id} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
+                          {/* Icon Indicator */}
+                          <div className={`flex items-center justify-center w-10 h-10 rounded-full border-4 shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2
+                            ${isPast ? 'bg-indigo-500 border-indigo-900 text-white' : 
+                              isCurrent ? 'bg-slate-800 border-indigo-500 text-indigo-400 animate-pulse' : 
+                              'bg-slate-800 border-slate-700 text-slate-500'}`}
+                          >
+                            {isPast ? <CheckCircle className="w-5 h-5" /> : 
+                             isCurrent ? <Loader className="w-5 h-5 animate-spin" /> : 
+                             <StepIcon className="w-5 h-5" />}
+                          </div>
+                          
+                          {/* Text Box */}
+                          <div className={`w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4 rounded-xl border transition-colors
+                            ${isPast ? 'bg-slate-800/80 border-slate-700' : 
+                              isCurrent ? 'bg-indigo-500/10 border-indigo-500/50' : 
+                              'bg-slate-900/50 border-slate-800 opacity-50'}`}
+                          >
+                            <h3 className={`font-semibold text-sm ${isCurrent ? 'text-indigo-300' : 'text-slate-200'}`}>
+                              {step.title}
+                            </h3>
+                            <p className="text-xs text-slate-400 mt-1">{step.desc}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Right Column: Terminal & Export */}
+              <div className="lg:col-span-7 space-y-6 flex flex-col">
+                
+                {/* Live Terminal */}
+                <div className="flex-1 bg-black border border-slate-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col font-mono text-sm min-h-[400px]">
+                  <div className="bg-slate-900 border-b border-slate-800 px-4 py-3 flex items-center gap-2">
+                    <Terminal className="w-4 h-4 text-slate-400 shrink-0" />
+                    <span className="text-slate-400 text-xs truncate">python transcription_pipeline.py --input raw_midi.mid --export pdf</span>
+                  </div>
+                  <div className="p-4 overflow-y-auto flex-1 space-y-2 text-slate-300">
+                    {logs.length === 0 && status === 'idle' ? (
+                      <div className="h-full flex flex-col items-center justify-center text-slate-600 space-y-4">
+                        <Cpu className="w-12 h-12 opacity-20" />
+                        <p>Awaiting raw MIDI input to initialize PyTorch ML models...</p>
+                      </div>
+                    ) : (
+                      logs.map((log, i) => (
+                        <div key={i} className="flex gap-4">
+                          <span className="text-slate-600 shrink-0">[{log.time}]</span>
+                          <span className={`${
+                            log.msg.includes('System') ? 'text-blue-400' :
+                            log.msg.includes('ML_Engine') ? 'text-fuchsia-400' :
+                            log.msg.includes('HMM_Module') ? 'text-amber-400' :
+                            log.msg.includes('Cluster_Alg') ? 'text-emerald-400' :
+                            log.msg.includes('WARNING') ? 'text-yellow-400' :
+                            log.msg.includes('Export') ? 'text-white font-bold' : ''
+                          }`}>{log.msg}</span>
+                        </div>
+                      ))
+                    )}
+                    <div ref={logsEndRef} />
+                  </div>
+                </div>
+
+                {/* Export Card */}
+                {status === 'complete' && (
+                  <div className="bg-indigo-600 text-white rounded-2xl p-6 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4 animate-slide-up">
+                    <div>
+                      <h3 className="text-xl font-bold flex items-center gap-2">
+                        <FileCode className="w-6 h-6" />
+                        Score Ready for Export
+                      </h3>
+                      <p className="text-indigo-200 text-sm mt-1">Professional, human-readable PDF score generated successfully.</p>
+                    </div>
+                    <button className="flex items-center gap-2 bg-white text-indigo-600 px-6 py-3 rounded-xl font-bold hover:bg-slate-100 transition-colors shadow-lg shrink-0" onClick={() => alert("This is a UI simulation. In a real backend, this would trigger a file download of the PDF generated by LilyPond.")}>
+                      <Download className="w-5 h-5" />
+                      Download .pdf
+                    </button>
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {/* Architecture & Documentation Section */}
+            <section id="architecture" className="border-t border-slate-800 pt-12 mt-12 pb-12">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                
+                <div className="space-y-6">
+                  <h2 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
+                    <Info className="w-6 h-6 text-indigo-400" />
+                    Why this upgrade changes the game
+                  </h2>
+                  
+                  <div className="space-y-4">
+                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                      <h4 className="font-bold text-slate-200 mb-2 flex items-center gap-2">
+                        <span className="bg-fuchsia-500/20 text-fuchsia-400 p-1.5 rounded-lg"><FastForward className="w-4 h-4"/></span>
+                        Neural Quantization vs. Math
+                      </h4>
+                      <p className="text-sm text-slate-400 leading-relaxed">
+                        Standard code just rounds a note to the nearest 16th note, creating unreadable garbage if the player slows down (rubato). Integrating a <strong className="text-slate-300">Sequence-to-Sequence AI</strong> forces the code to look at the <em>context</em> of the phrase to guess the intended rhythm instead of blindly snapping to a grid.
+                      </p>
+                    </div>
+
+                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                      <h4 className="font-bold text-slate-200 mb-2 flex items-center gap-2">
+                        <span className="bg-amber-500/20 text-amber-400 p-1.5 rounded-lg"><GitBranch className="w-4 h-4"/></span>
+                        Harmonic Context (HMMs)
+                      </h4>
+                      <p className="text-sm text-slate-400 leading-relaxed">
+                        Solves the "ugly accidentals" problem. Instead of randomly guessing between A# and Bb, a <strong className="text-slate-300">Hidden Markov Model</strong> reads the surrounding chords and spells the note exactly how a composer would logically intend it.
+                      </p>
+                    </div>
+
+                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                      <h4 className="font-bold text-slate-200 mb-2 flex items-center gap-2">
+                        <span className="bg-emerald-500/20 text-emerald-400 p-1.5 rounded-lg"><Layout className="w-4 h-4"/></span>
+                        Voice Separation
+                      </h4>
+                      <p className="text-sm text-slate-400 leading-relaxed">
+                        Forces the AI to stop treating MIDI like a single block of data. Using <strong className="text-slate-300">clustering algorithms</strong>, it treats it like a real performance, mapping out which fingers/hands are playing which lines across the Grand Staff.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-6">
+                  <h2 className="text-2xl font-bold text-slate-100 mb-6">Technical Architecture</h2>
+                  
+                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4 shadow-xl">
+                    <h4 className="text-sm font-bold text-indigo-400 uppercase tracking-wider">Dependencies (requirements.txt)</h4>
+                    <pre className="bg-black text-emerald-400 p-4 rounded-lg font-mono text-sm overflow-x-auto border border-slate-800">
+# Symbolic Music Libraries
+music21==8.3.0
+partitura==1.3.1
+symusic==0.4.1
+
+# AI/ML Core Frameworks
+torch==2.1.0
+torchvision==0.16.0
+torchaudio==2.1.0
+
+# Pre-Trained & Inference Support
+transformers==4.34.0
+scikit-learn==1.3.1
+hmmlearn==0.3.0
+
+# Engraving Backend
+lilypond==2.24.2</pre>
+                  </div>
+
+                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-xl">
+                    <h4 className="text-sm font-bold text-indigo-400 uppercase tracking-wider mb-3">Data Flow Strategy</h4>
+                    <ul className="text-sm text-slate-400 space-y-3 list-disc pl-4">
+                      <li><strong>Ingestion:</strong> Raw bytes parsed via <code className="text-indigo-300 bg-indigo-500/10 px-1 py-0.5 rounded">symusic</code> for high-performance timeline extraction.</li>
+                      <li><strong>Heuristics:</strong> Data fed into PyTorch Seq2Seq to output a clean, quantized abstract syntax tree of notes.</li>
+                      <li><strong>Symbolic Generation:</strong> The quantized tree is passed to <code className="text-indigo-300 bg-indigo-500/10 px-1 py-0.5 rounded">music21</code> where HMM logic applies key signatures, and scikit-learn models separate parts.</li>
+                      <li><strong>Export:</strong> Stream objects are rendered to <code className="text-indigo-300 bg-indigo-500/10 px-1 py-0.5 rounded">.pdf</code> via the LilyPond backend for professional, print-ready engraving.</li>
+                    </ul>
+                  </div>
+
+                </div>
+              </div>
+            </section>
+          </main>
+        </div>
+      );
+    }
+
+    // Render the App
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
+
+```
