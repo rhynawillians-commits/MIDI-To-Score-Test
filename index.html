@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Algorithmic MIDI to PDF Arranger</title>
+    
+    <script src="https://unpkg.com/@tonejs/midi"></script>
+    <script src="https://unpkg.com/vexflow/releases/vexflow-debug.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://unpkg.com/svg2pdf.js@2.2.3/dist/svg2pdf.umd.min.js"></script>
+    
+    <style>
+        body { 
+            font-family: system-ui, -apple-system, sans-serif; 
+            background: #f4f4f5; 
+            padding: 2rem; 
+            margin: 0;
+            color: #1e293b;
+        }
+        .toolbar { 
+            display: flex; 
+            align-items: center;
+            gap: 1rem; 
+            margin-bottom: 2rem; 
+            background: white;
+            padding: 1rem;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgb(0 0 0 / 0.1);
+        }
+        button, input::file-selector-button {
+            padding: 0.75rem 1.5rem; 
+            background: #2563eb; 
+            color: white;
+            border: none; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+        button:hover, input::file-selector-button:hover {
+            background: #1d4ed8;
+        }
+        button:disabled { 
+            background: #cbd5e1; 
+            cursor: not-allowed; 
+        }
+        #status { 
+            font-weight: 500; 
+            color: #475569; 
+            margin-left: auto;
+        }
+        #score-container { 
+            background: white; 
+            padding: 2rem; 
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); 
+            border-radius: 8px; 
+            overflow-x: auto; 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #score-container svg { 
+            margin-bottom: 20px; 
+            max-width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <input type="file" id="midi-upload" accept=".mid,.midi">
+        <button id="export-btn" disabled>Export to High-Res PDF</button>
+        <div id="status">Waiting for file...</div>
+    </div>
+    <div id="score-container"></div>
+
+    <script>
+        const { Midi } = window.Midi;
+        const VF = window.Vex.Flow;
+        const { jsPDF } = window.jspdf;
+
+        class AudioInformaticsArranger {
+            constructor() {
+                this.svgElements = [];
+                this.pageWidth = 210; 
+                this.pageHeight = 297; 
+                this.margins = { top: 20, left: 15, right: 15, bottom: 20 };
+                
+                this.initUI();
+            }
+
+            initUI() {
+                document.getElementById('midi-upload').addEventListener('change', (e) => this.handleFileUpload(e));
+                document.getElementById('export-btn').addEventListener('click', () => this.exportPDF());
+            }
+
+            updateStatus(message) {
+                document.getElementById('status').innerText = message;
+                console.log(`[Status]: ${message}`);
+            }
+
+            async handleFileUpload(event) {
+                const file = event.target.files[0];
+                if (!file) return;
+
+                this.updateStatus("Reading MIDI file...");
+                const reader = new FileReader();
+                
+                reader.onload = async (e) => {
+                    try {
+                        const midiData = new Midi(e.target.result);
+                        
+                        this.updateStatus("Running Algorithmic Quantization & Arrangement...");
+                        const arrangedData = await this.interpretMIDI(midiData);
+
+                        this.updateStatus("Rendering vector sheet music via VexFlow...");
+                        await this.renderScore(arrangedData);
+
+                        this.updateStatus("Ready for PDF Export.");
+                        document.getElementById('export-btn').disabled = false;
+                    } catch (error) {
+                        this.updateStatus("Error processing MIDI: " + error.message);
+                        console.error(error);
+                    }
+                };
+                reader.readAsArrayBuffer(file);
+            }
+
+            // --- ALGORITHMIC INFERENCE PIPELINE ---
+
+            async interpretMIDI(midiData) {
+                // Find the track with the most notes to ensure we get the melody/chords
+                const track = midiData.tracks.reduce((prev, current) => 
+                    (prev.notes.length > current.notes.length) ? prev : current
+                );
+                
+                if (!track || track.notes.length === 0) {
+                    throw new Error("No notes found in MIDI file.");
+                }
+
+                await new Promise(resolve => setTimeout(resolve, 50));
+
+                const quantizedNotes = this.algorithmicQuantize(track.notes);
+                const voices = this.separateVoices(quantizedNotes);
+
+                return {
+                    key: "C", // Defaulting to C for safe VexFlow accidental rendering
+                    tempo: midiData.header.tempos[0]?.bpm || 120,
+                    voices: voices,
+                    totalTime: track.duration
+                };
+            }
+
+            algorithmicQuantize(notes) {
+                // Forcing notes into strict quarter note grid (0.5s at 120bpm) for rendering stability
+                const GRID = 0.5; 
+                
+                return notes.map(note => ({
+                    midi: note.midi,
+                    time: Math.round(note.time / GRID) * GRID,
+                    duration: Math.max(GRID, Math.round(note.duration / GRID) * GRID)
+                })).sort((a, b) => a.time - b.time);
+            }
+
+            separateVoices(notes) {
+                const treble = [];
+                const bass = [];
+                
+                // Split at Middle C (MIDI 60)
+                notes.forEach(note => {
+                    if (note.midi >= 60) treble.push(note);
+                    else bass.push(note);
+                });
+
+                return { treble, bass };
+            }
+
+            // Helper to convert MIDI pitch to VexFlow string (e.g., 60 -> "c/4")
+            midiToVexKey(midiNote) {
+                const notes = ["c", "c#", "d", "d#", "e", "f", "f#", "g", "g#", "a", "a#", "b"];
+                const octave = Math.floor(midiNote / 12) - 1;
+                const noteName = notes[midiNote % 12];
+                return `${noteName}/${octave}`;
+            }
+
+            // --- VECTOR RENDERING (VEXFLOW) ---
+
+            async renderScore(arrangedData) {
+                const container = document.getElementById('score-container');
+                container.innerHTML = ''; 
+                this.svgElements = [];
+
+                const SYSTEM_WIDTH = 800;
+                const MEASURES_PER_SYSTEM = 4;
+                const BEATS_PER_MEASURE = 4;
+                const SECONDS_PER_BEAT = 0.5; // Assuming 120 BPM mapping
+                
+                // Calculate total measures based on the last note played
+                const maxTime = Math.max(
+                    ...arrangedData.voices.treble.map(n => n.time), 
+                    ...arrangedData.voices.bass.map(n => n.time),
+                    0
+                );
+                const totalMeasures = Math.max(4, Math.ceil(maxTime / (BEATS_PER_MEASURE * SECONDS_PER_BEAT)));
+
+                for (let i = 0; i < totalMeasures; i += MEASURES_PER_SYSTEM) {
+                    const div = document.createElement('div');
+                    container.appendChild(div);
+
+                    const renderer = new VF.Renderer(div, VF.Renderer.Backends.SVG);
+                    renderer.resize(SYSTEM_WIDTH, 250);
+                    const context = renderer.getContext();
+                    
+                    for(let m = 0; m < MEASURES_PER_SYSTEM; m++) {
+                        const currentMeasure = i + m;
+                        if (currentMeasure >= totalMeasures) break;
+
+                        const xOffset = m * (SYSTEM_WIDTH / MEASURES_PER_SYSTEM);
+                        const measureWidth = SYSTEM_WIDTH / MEASURES_PER_SYSTEM;
+                        const measureStartTime = currentMeasure * (BEATS_PER_MEASURE * SECONDS_PER_BEAT);
+                        const measureEndTime = measureStartTime + (BEATS_PER_MEASURE * SECONDS_PER_BEAT);
+
+                        const staveTreble = new VF.Stave(xOffset, 20, measureWidth);
+                        const staveBass = new VF.Stave(xOffset, 120, measureWidth);
+
+                        if (m === 0) {
+                            staveTreble.addClef("treble").addTimeSignature("4/4");
+                            staveBass.addClef("bass").addTimeSignature("4/4");
+                            
+                            const connector = new VF.StaveConnector(staveTreble, staveBass);
+                            connector.setType(VF.StaveConnector.type.BRACE);
+                            connector.setContext(context).draw();
+                        }
+
+                        staveTreble.setContext(context).draw();
+                        staveBass.setContext(context).draw();
+
+                        // Fetch notes for this specific measure
+                        const getMeasureNotes = (voiceArray, clef) => {
+                            const notesInMeasure = voiceArray.filter(n => n.time >= measureStartTime && n.time < measureEndTime);
+                            
+                            // To prevent VexFlow crashes, we enforce exactly 4 quarter notes per measure.
+                            // Real transcription engines (like OpenSheetMusicDisplay) are massive because doing this dynamically is highly complex.
+                            const vexNotes = [];
+                            for(let beat = 0; beat < 4; beat++) {
+                                const beatTime = measureStartTime + (beat * SECONDS_PER_BEAT);
+                                const noteAtBeat = notesInMeasure.find(n => n.time === beatTime);
+                                
+                                if (noteAtBeat) {
+                                    const key = this.midiToVexKey(noteAtBeat.midi);
+                                    let staveNote = new VF.StaveNote({ clef: clef, keys: [key], duration: "q" });
+                                    // Add accidentals if it's a sharp
+                                    if (key.includes("#")) staveNote.addModifier(new VF.Accidental("#"));
+                                    vexNotes.push(staveNote);
+                                } else {
+                                    vexNotes.push(new VF.StaveNote({ clef: clef, keys: ["b/4"], duration: "qr" })); // Quarter rest
+                                }
+                            }
+                            return vexNotes;
+                        };
+
+                        const notesTreble = getMeasureNotes(arrangedData.voices.treble, "treble");
+                        const notesBass = getMeasureNotes(arrangedData.voices.bass, "bass");
+
+                        VF.Formatter.FormatAndDraw(context, staveTreble, notesTreble);
+                        VF.Formatter.FormatAndDraw(context, staveBass, notesBass);
+                    }
+
+                    this.svgElements.push(context.svg);
+                }
+            }
+
+            // --- PROFESSIONAL PDF EXPORT ---
+
+            async exportPDF() {
+                this.updateStatus("Generating high-res vector PDF...");
+                document.getElementById('export-btn').disabled = true;
+
+                try {
+                    const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+                    
+                    let currentY = this.margins.top;
+                    const usableWidth = this.pageWidth - this.margins.left - this.margins.right;
+                    
+                    pdf.setFontSize(24);
+                    pdf.text("Algorithmic Score", this.pageWidth / 2, currentY, { align: 'center' });
+                    currentY += 15;
+
+                    for (let i = 0; i < this.svgElements.length; i++) {
+                        const svgElement = this.svgElements[i];
+                        
+                        const svgWidth = parseFloat(svgElement.getAttribute('width'));
+                        const svgHeight = parseFloat(svgElement.getAttribute('height'));
+                        const scale = usableWidth / svgWidth;
+                        const mappedHeight = svgHeight * scale;
+
+                        if (currentY + mappedHeight > this.pageHeight - this.margins.bottom) {
+                            pdf.addPage();
+                            currentY = this.margins.top; 
+                        }
+
+                        await pdf.svg(svgElement, {
+                            x: this.margins.left,
+                            y: currentY,
+                            width: usableWidth,
+                            height: mappedHeight
+                        });
+
+                        currentY += mappedHeight + 10; 
+                    }
+
+                    pdf.save('Arranged_Score.pdf');
+                    this.updateStatus("PDF Downloaded Successfully.");
+                } catch (err) {
+                    this.updateStatus("Error generating PDF.");
+                    console.error(err);
+                } finally {
+                    document.getElementById('export-btn').disabled = false;
+                }
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            new AudioInformaticsArranger();
+        });
+    </script>
+</body>
+</html>
+ 
