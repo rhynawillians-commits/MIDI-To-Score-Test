@@ -4,12 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Algorithmic MIDI to PDF Arranger</title>
-    
+
+    <!-- Correct order of dependencies -->
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <script src="https://unpkg.com/vexflow/releases/vexflow-debug.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://unpkg.com/svg2pdf.js@2.2.3/dist/svg2pdf.umd.min.js"></script>
-    
+
     <style>
         body { 
             font-family: system-ui, -apple-system, sans-serif; 
@@ -75,7 +76,8 @@
     <div id="score-container"></div>
 
     <script>
-        const { Midi } = window.Midi;
+        // FIXED: window.Midi is the class itself, not a container.
+        const Midi = window.Midi;                      // was: const { Midi } = window.Midi;
         const VF = window.Vex.Flow;
         const { jsPDF } = window.jspdf;
 
@@ -108,6 +110,7 @@
                 
                 reader.onload = async (e) => {
                     try {
+                        // Now 'new Midi()' works correctly
                         const midiData = new Midi(e.target.result);
                         
                         this.updateStatus("Running Algorithmic Quantization & Arrangement...");
@@ -129,7 +132,6 @@
             // --- ALGORITHMIC INFERENCE PIPELINE ---
 
             async interpretMIDI(midiData) {
-                // Find the track with the most notes to ensure we get the melody/chords
                 const track = midiData.tracks.reduce((prev, current) => 
                     (prev.notes.length > current.notes.length) ? prev : current
                 );
@@ -138,22 +140,22 @@
                     throw new Error("No notes found in MIDI file.");
                 }
 
+                // Small delay for UI feedback
                 await new Promise(resolve => setTimeout(resolve, 50));
 
                 const quantizedNotes = this.algorithmicQuantize(track.notes);
                 const voices = this.separateVoices(quantizedNotes);
 
                 return {
-                    key: "C", // Defaulting to C for safe VexFlow accidental rendering
-                    tempo: midiData.header.tempos[0]?.bpm || 120,
+                    key: "C",
+                    tempo: midiData.header.tempos?.[0]?.bpm || 120,
                     voices: voices,
                     totalTime: track.duration
                 };
             }
 
             algorithmicQuantize(notes) {
-                // Forcing notes into strict quarter note grid (0.5s at 120bpm) for rendering stability
-                const GRID = 0.5; 
+                const GRID = 0.5; // quarter note at 120 bpm
                 
                 return notes.map(note => ({
                     midi: note.midi,
@@ -166,7 +168,6 @@
                 const treble = [];
                 const bass = [];
                 
-                // Split at Middle C (MIDI 60)
                 notes.forEach(note => {
                     if (note.midi >= 60) treble.push(note);
                     else bass.push(note);
@@ -175,7 +176,7 @@
                 return { treble, bass };
             }
 
-            // Helper to convert MIDI pitch to VexFlow string (e.g., 60 -> "c/4")
+            // Convert MIDI pitch to VexFlow notation, e.g. 60 → "c/4"
             midiToVexKey(midiNote) {
                 const notes = ["c", "c#", "d", "d#", "e", "f", "f#", "g", "g#", "a", "a#", "b"];
                 const octave = Math.floor(midiNote / 12) - 1;
@@ -193,9 +194,8 @@
                 const SYSTEM_WIDTH = 800;
                 const MEASURES_PER_SYSTEM = 4;
                 const BEATS_PER_MEASURE = 4;
-                const SECONDS_PER_BEAT = 0.5; // Assuming 120 BPM mapping
-                
-                // Calculate total measures based on the last note played
+                const SECONDS_PER_BEAT = 0.5;
+
                 const maxTime = Math.max(
                     ...arrangedData.voices.treble.map(n => n.time), 
                     ...arrangedData.voices.bass.map(n => n.time),
@@ -235,25 +235,40 @@
                         staveTreble.setContext(context).draw();
                         staveBass.setContext(context).draw();
 
-                        // Fetch notes for this specific measure
+                        // Retrieve notes for this measure, with safe floating‑point comparison
                         const getMeasureNotes = (voiceArray, clef) => {
-                            const notesInMeasure = voiceArray.filter(n => n.time >= measureStartTime && n.time < measureEndTime);
-                            
-                            // To prevent VexFlow crashes, we enforce exactly 4 quarter notes per measure.
-                            // Real transcription engines (like OpenSheetMusicDisplay) are massive because doing this dynamically is highly complex.
+                            const notesInMeasure = voiceArray.filter(n => 
+                                n.time >= measureStartTime - 0.0001 && n.time < measureEndTime - 0.0001
+                            );
                             const vexNotes = [];
+                            const tolerance = 0.0001;
+
                             for(let beat = 0; beat < 4; beat++) {
                                 const beatTime = measureStartTime + (beat * SECONDS_PER_BEAT);
-                                const noteAtBeat = notesInMeasure.find(n => n.time === beatTime);
+                                // Use tolerance when searching for the exact beat
+                                const noteAtBeat = notesInMeasure.find(n => 
+                                    Math.abs(n.time - beatTime) < tolerance
+                                );
                                 
                                 if (noteAtBeat) {
                                     const key = this.midiToVexKey(noteAtBeat.midi);
-                                    let staveNote = new VF.StaveNote({ clef: clef, keys: [key], duration: "q" });
-                                    // Add accidentals if it's a sharp
-                                    if (key.includes("#")) staveNote.addModifier(new VF.Accidental("#"));
+                                    let staveNote = new VF.StaveNote({ 
+                                        clef: clef, 
+                                        keys: [key], 
+                                        duration: "q" 
+                                    });
+                                    if (key.includes("#")) {
+                                        staveNote.addModifier(new VF.Accidental("#"));
+                                    }
                                     vexNotes.push(staveNote);
                                 } else {
-                                    vexNotes.push(new VF.StaveNote({ clef: clef, keys: ["b/4"], duration: "qr" })); // Quarter rest
+                                    // Explicit rest
+                                    vexNotes.push(new VF.StaveNote({ 
+                                        clef: clef, 
+                                        keys: ["b/4"], 
+                                        duration: "qr",
+                                        rest: true 
+                                    }));
                                 }
                             }
                             return vexNotes;
@@ -266,6 +281,7 @@
                         VF.Formatter.FormatAndDraw(context, staveBass, notesBass);
                     }
 
+                    // context.svg is the root SVG element in VexFlow 1.x
                     this.svgElements.push(context.svg);
                 }
             }
@@ -326,4 +342,3 @@
     </script>
 </body>
 </html>
- 
